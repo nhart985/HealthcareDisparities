@@ -75,7 +75,13 @@ vars=c("TIME","STATUS","CTR_CD","RACE",
        "CAN_PREV_TX")
 dat=dat[,vars]
 dat=dat[complete.cases(dat),]
+write.csv(dat,"//Users//nicholashartman//Downloads//OPTN//dat_full.csv")
 
+library(lme4)
+g=glmer(STATUS~(RACE|CTR_CD)+RACE+INIT_AGE+factor(Blood_Type)+factor(BMI)+Diabetes+CAN_PREV_TX,data=dat,family="binomial")
+summary(g)
+
+dat=read.csv("//Users//nicholashartman//Downloads//OPTN//dat.csv")
 m=length(unique(dat$CTR_CD))
 g=glm(as.formula(paste("STATUS~RACE+",
                        paste0("WHITE_","CTR",1:(m-1),collapse="+"),
@@ -85,59 +91,18 @@ g=glm(as.formula(paste("STATUS~RACE+",
                        "+","factor(BMI)",
                        "+","Diabetes",
                        "+","CAN_PREV_TX")),data=dat,family="binomial")
-summary(g)
 
 #Calculate Measures
-beta_equality=g$coefficients[c(1,2,357:length(g$coefficients))]
-X_equality=model.matrix(g)[,c(1,2,357:length(g$coefficients))]
-beta_equity=g$coefficients[c(357:length(g$coefficients))]
-X_equity=model.matrix(g)[,c(357:length(g$coefficients))]
-dat$Xbeta_equality=as.numeric(X_equality%*%beta_equality)
-dat$Xbeta_equity=as.numeric(X_equity%*%beta_equity)
-beta=g$coefficients
-dat$Xbeta=as.numeric(model.matrix(g)%*%beta)
+num_equality=g$coefficients[substr(names(g$coefficients),1,5)=="WHITE"]-g$coefficients[substr(names(g$coefficients),1,5)=="BLACK"]
+num_equity=g$coefficients[2]+g$coefficients[substr(names(g$coefficients),1,5)=="WHITE"]-g$coefficients[substr(names(g$coefficients),1,5)=="BLACK"]
+ind_white=which(substr(names(g$coefficients),1,5)=="WHITE")
+ind_black=which(substr(names(g$coefficients),1,5)=="BLACK")
+var_num_equality=diag(vcov(g))[ind_white]+diag(vcov(g))[ind_black]-2*diag(vcov(g)[ind_white,ind_black])
+var_num_equity=diag(vcov(g))[2]+diag(vcov(g))[ind_white]+diag(vcov(g))[ind_black]+2*vcov(g)[2,ind_white]-2*vcov(g)[2,ind_black]-2*diag(vcov(g)[ind_white,ind_black])
+Equality=num_equality/sqrt(var_num_equality)
+Equity=num_equity/sqrt(var_num_equity)
 
-O_w=sapply(split(dat$STATUS[dat$RACE==1],
-                 dat$CTR_CD[dat$RACE==1]),sum)
-O_b=sapply(split(dat$STATUS[dat$RACE==0],
-                 dat$CTR_CD[dat$RACE==0]),sum)
-
-dat$exp_equality=plogis(dat$Xbeta_equality)
-dat$exp_equity=plogis(dat$Xbeta_equity)
-dat$n_temp_equality=plogis(dat$Xbeta_equality)*(1-plogis(dat$Xbeta_equality))
-dat$n_temp_equity=plogis(dat$Xbeta_equity)*(1-plogis(dat$Xbeta_equity))
-dat$o_var=plogis(dat$Xbeta)*(1-plogis(dat$Xbeta))
-
-E_equality_w=sapply(split(dat$exp_equality[dat$RACE==1],
-                          dat$CTR_CD[dat$RACE==1]),sum)
-E_equity_w=sapply(split(dat$exp_equity[dat$RACE==1],
-                        dat$CTR_CD[dat$RACE==1]),sum)
-E_equality_b=sapply(split(dat$exp_equality[dat$RACE==0],
-                          dat$CTR_CD[dat$RACE==0]),sum)
-E_equity_b=sapply(split(dat$exp_equity[dat$RACE==0],
-                        dat$CTR_CD[dat$RACE==0]),sum)
-n_equality_w=sapply(split(dat$n_temp_equality[dat$RACE==1],
-                          dat$CTR_CD[dat$RACE==1]),sum)
-n_equity_w=sapply(split(dat$n_temp_equity[dat$RACE==1],
-                        dat$CTR_CD[dat$RACE==1]),sum)
-n_equality_b=sapply(split(dat$n_temp_equality[dat$RACE==0],
-                          dat$CTR_CD[dat$RACE==0]),sum)
-n_equity_b=sapply(split(dat$n_temp_equity[dat$RACE==0],
-                        dat$CTR_CD[dat$RACE==0]),sum)
-o_var_w=sapply(split(dat$o_var[dat$RACE==1],
-                     dat$CTR_CD[dat$RACE==1]),sum)
-o_var_b=sapply(split(dat$o_var[dat$RACE==0],
-                     dat$CTR_CD[dat$RACE==0]),sum)
-
-T_equality_w=(O_w-E_equality_w)/n_equality_w
-T_equity_w=(O_w-E_equity_w)/n_equity_w
-T_equality_b=(O_b-E_equality_b)/n_equality_b
-T_equity_b=(O_b-E_equity_b)/n_equity_b
-Den_Equality=sqrt(o_var_w/(n_equality_w^2)+o_var_b/(n_equality_b^2))
-Den_Equity=sqrt(o_var_w/(n_equity_w^2)+o_var_b/(n_equity_b^2))
-Equality=(T_equality_w-T_equality_b)/Den_Equality
-Equity=(T_equity_w-T_equity_b)/Den_Equity
-
+setwd("//Users//nicholashartman//Downloads//OPTN")
 set.seed(3)
 library(ggplot2)
 x=rnorm(50,1)
@@ -150,7 +115,7 @@ g=ggplot(dat,aes(x,y))+geom_point(aes(shape=shape,colour=shape),size=2)
 g=g+scale_shape_manual(values=c("1"=15,"2"=16,"3"=17))
 g=g+scale_colour_manual(values=c("1"="gray","2"="black","3"="gray40"))
 g=g+theme_classic()
-g=g+xlab("Standardized Equality Measure")+ylab("Standardized Equity Measure")
+g=g+xlab("Standardized Equality Statistic")+ylab("Standardized Equity Statistic")
 g=g+theme(text=element_text(size=18))
 g=g+geom_vline(aes(xintercept=1),colour="red",linetype="dashed",size=1)+geom_hline(aes(yintercept=1),colour="red",linetype="dashed",size=1)
 g=g+theme(legend.position="none")
@@ -175,7 +140,7 @@ g=ggplot(dat,aes(Equality,Equity))+geom_point(aes(shape=shape,colour=shape),size
 g=g+scale_shape_manual(values=c("1"=15,"2"=16,"3"=17))
 g=g+scale_colour_manual(values=c("1"="gray","2"="black","3"="gray40"))
 g=g+theme_classic()
-g=g+xlab("Standardized Equality Measure")+ylab("Standardized Equity Measure")
+g=g+xlab("Standardized Equality Statistic")+ylab("Standardized Equity Statistic")
 g=g+theme(text=element_text(size=18))
 g=g+geom_vline(aes(xintercept=1.96),colour="red",linetype="dashed",size=1)+geom_hline(aes(yintercept=1.96),colour="red",linetype="dashed",size=1)
 g=g+theme(legend.position="none")
@@ -184,14 +149,4 @@ ggsave(plot=g,filename="Disparity_Assessment_Chart_Access.eps")
 
 mean(Equality > 1.96 & Equity > 1.96)
 mean(Equality < 1.96 & Equity > 1.96)
-
-
-
-
-
-
-
-
-
-
-
+1-mean(Equality > 1.96 & Equity > 1.96)-mean(Equality < 1.96 & Equity > 1.96)
